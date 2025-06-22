@@ -23,7 +23,7 @@ Below is a rather loose timeline I have planned for this plugin.  Not all dates 
 -Have all core logic dsp finished (including up to 5 notes, and corresponding octaves, being filtered.  More q function types and smoothing).
 
 2025/08/31
--Have a built in spectrum analyzer and filter curve to display the plugins effect in realtime (togglable off and on).  Additionally all gui touch ups including custom knobs, reactive keys (active keys are highlighted), custom background and menu options, settings menu along with user background customizability).
+-All gui touch ups being finished including custom knobs, reactive keys (active keys are highlighted), custom background and menu options, settings menu along with user background customizability).
 
 2025/09/31 
 -Full release of version 1.0 accessible both in this repo and the NewShades website.

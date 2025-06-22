@@ -71,6 +71,12 @@ public:
 
     // Listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
+    std::vector<int> activeFreqs = { 0,0,0,0,0,0,0,0,0,0,0,0,0 };
+    void toggleActiveFreq(int x);
+    int numOfActiveFreqs = 1;
+    void updateVectorProcessorChain();
+    juce::dsp::ProcessSpec spec;
+    
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ColourCombV4AudioProcessor)
@@ -106,6 +112,15 @@ private:
         {233.08f, 466.16f, 932.33f, 1864.66f, 3729.31f, 7458.62f, 14917.24f},
         {246.94f, 493.88f, 987.77f, 1975.53f, 3951.07f, 7902.13f, 15804.26f}
     };
+
+    //vector chain for multiplenotes
+    bool useVectorChain = true;  // Set this from UI or private test toggle
+    std::vector<juce::dsp::ProcessorDuplicator<
+        juce::dsp::IIR::Filter<float>,
+        juce::dsp::IIR::Coefficients<float>>> vectorProcessorChain;
+
+
+
 };
 
 
@@ -143,7 +158,7 @@ void updateFilterChainRecursive(
                 float freqMapping = ((freq / 2.0f) - (dipFactor * 6000.0f)) / qratio;
                 q = juce::jlimit(0.5f, 30.0f, freqMapping);
             }
-            juce::Logger::writeToLog(" | Freq: " + juce::String(freq) + " | Qratio: " + juce::String(qKnobVal) + " | Q used: " + juce::String(q));
+            //juce::Logger::writeToLog(" | Freq: " + juce::String(freq) + " | Qratio: " + juce::String(qKnobVal) + " | Q used: " + juce::String(q));
             //Logger::writeToLog(
                // " | Freq: " + juce::String(freq) +
               //  " | Qratio: " + juce::String(qKnobVal) +

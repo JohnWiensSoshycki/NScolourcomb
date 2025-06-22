@@ -26,19 +26,11 @@ ColourCombV4AudioProcessor::ColourCombV4AudioProcessor()
     parameters.addParameterListener("makeup", this);
     parameters.addParameterListener("key", this);
     parameters.addParameterListener("qFunction", this);
-    //parameters.getParameter("qFunction")->setValueNotifyingHost(0.0f);
 }
 
-ColourCombV4AudioProcessor::~ColourCombV4AudioProcessor()
-{
-}
-
+ColourCombV4AudioProcessor::~ColourCombV4AudioProcessor(){}
 //==============================================================================
-const juce::String ColourCombV4AudioProcessor::getName() const
-{
-    return JucePlugin_Name;
-}
-
+const juce::String ColourCombV4AudioProcessor::getName() const{return JucePlugin_Name;}
 bool ColourCombV4AudioProcessor::acceptsMidi() const
 {
 #if JucePlugin_WantsMidiInput
@@ -66,11 +58,7 @@ bool ColourCombV4AudioProcessor::isMidiEffect() const
 #endif
 }
 
-double ColourCombV4AudioProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
+double ColourCombV4AudioProcessor::getTailLengthSeconds() const{return 0.0;}
 int ColourCombV4AudioProcessor::getNumPrograms() { return 1; }
 int ColourCombV4AudioProcessor::getCurrentProgram() { return 0; }
 void ColourCombV4AudioProcessor::setCurrentProgram(int index) {}
@@ -82,7 +70,7 @@ void ColourCombV4AudioProcessor::prepareToPlay(double sampleRate, int samplesPer
 {
     currentSampleRate = sampleRate;
 
-    juce::dsp::ProcessSpec spec;
+    //juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumInputChannels();
@@ -105,10 +93,6 @@ bool ColourCombV4AudioProcessor::isBusesLayoutSupported(const BusesLayout& layou
     juce::ignoreUnused(layouts);
     return true;
 #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
         && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
@@ -124,17 +108,35 @@ bool ColourCombV4AudioProcessor::isBusesLayoutSupported(const BusesLayout& layou
 }
 #endif
 
+
+
+
+
+
+
 void ColourCombV4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    juce::dsp::AudioBlock<float> block(buffer);
-    if (buffer.getNumChannels() >= 1)
-        filterChainLeft.process(juce::dsp::ProcessContextReplacing<float>(block.getSingleChannelBlock(0)));
-    if (buffer.getNumChannels() >= 2)
-        filterChainRight.process(juce::dsp::ProcessContextReplacing<float>(block.getSingleChannelBlock(1)));
+    //*****fixedTemplateProcess*************
+    if (useVectorChain == false) {
+        juce::dsp::AudioBlock<float> block(buffer);
+        if (buffer.getNumChannels() >= 1)
+            filterChainLeft.process(juce::dsp::ProcessContextReplacing<float>(block.getSingleChannelBlock(0)));
+        if (buffer.getNumChannels() >= 2)
+            filterChainRight.process(juce::dsp::ProcessContextReplacing<float>(block.getSingleChannelBlock(1)));
+    }
+    //*******VectorChainProcess**********
+    else if (useVectorChain == true) {
+        juce::dsp::AudioBlock<float> block(buffer);
+        juce::dsp::ProcessContextReplacing<float> context(block);
+        for (auto& filter : vectorProcessorChain) {
+            filter.process(context);
+        }
+    }
+
 
     float wet = getMixValue();
     float dry = 1.0f - wet;
@@ -162,12 +164,13 @@ void ColourCombV4AudioProcessor::setStateInformation(const void* data, int sizeI
     if (tree.isValid()) parameters.state = tree;
 }
 
-
-
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new ColourCombV4AudioProcessor();
 }
+
+
+
 
 
 
@@ -245,6 +248,66 @@ void ColourCombV4AudioProcessor::updateFilterChainForChannel(
     >& chain,
     const std::vector<float>& freqs)
 {
-    juce::Logger::writeToLog("function changing to: " + juce::String(getCurrentFunction()));
+    //juce::Logger::writeToLog("function changing to: " + juce::String(getCurrentFunction()));
     updateFilterChainRecursive(chain, freqs, getSampleRate(), getQValue(), getCurrentFunction());
+}
+
+
+
+
+
+
+
+//****************MultiNoteUpdateVectorProcessChain**********
+void ColourCombV4AudioProcessor::updateVectorProcessorChain() {
+    vectorProcessorChain.clear();
+    //filter through the thirteen possible keynotes
+    for (int keyIndex = 0; keyIndex < activeFreqs.size(); ++keyIndex) {
+        //if a key note is 1, active, we create a filter for its harmonics
+        if (activeFreqs[keyIndex] == 1) {
+            //loop thorugh all the possible harmonics that we have stored in the noteFrequencyTable
+            for (int harmonicIndex = 0; harmonicIndex < 6; ++harmonicIndex) {
+                auto specificFreq = noteFrequencies[keyIndex][harmonicIndex];
+
+                //so long as the harmonic is range make a filter for it
+                if (frequencyFloor <= specificFreq && specificFreq <= frequencyCeiling) {
+                    // Add filter for this specificFreq here
+                    float qratio = getQValue();
+                    float q = 10;
+                    auto pi = juce::MathConstants<float>::pi;
+                    if (getCurrentFunction() == 0) {
+                        float freqRad = ((specificFreq - 15000) / 10000) * (1 / 180) * pi;
+                        float freqMapping = ((specificFreq / 1.6) - ((5000 * sin(freqRad)) + 5000)) / qratio;
+                        q = juce::jlimit(0.2f, 30.0f, freqMapping);
+                    }
+                    else if (getCurrentFunction() == 1) {
+                        float scaledFreq = juce::jmap(specificFreq, 60.0f, 18000.0f, 0.0f, 1.0f);  // Normalize frequency range to 0–1
+                        float shaped = std::sin(scaledFreq * juce::MathConstants<float>::pi); // sin(pi * x), peak at 0.5 (midrange)
+                        float dipFactor = 1.0f - shaped;  // Invert to have lowest value at midrange
+                        float freqMapping = ((specificFreq / 2.0f) - (dipFactor * 6000.0f)) / qratio;
+                        q = juce::jlimit(0.2f, 30.0f, freqMapping);
+                    }
+                    juce::dsp::ProcessorDuplicator<
+                        juce::dsp::IIR::Filter<float>,
+                        juce::dsp::IIR::Coefficients<float>> newFilter;
+                    auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(getSampleRate(), specificFreq, q);
+                    *newFilter.state = *coeffs;
+                    newFilter.prepare(spec);
+                    vectorProcessorChain.push_back(std::move(newFilter));
+                }
+            }
+        }
+    }
+}
+
+
+void ColourCombV4AudioProcessor::toggleActiveFreq(int x) {
+    if (activeFreqs[x] == 0 && numOfActiveFreqs < 5) {
+        activeFreqs[x] = 1;
+        numOfActiveFreqs++;
+    }
+    else if (activeFreqs[x] == 1) {
+        activeFreqs[x] = 0;
+        numOfActiveFreqs--;
+    }
 }

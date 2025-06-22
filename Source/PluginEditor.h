@@ -59,7 +59,7 @@ private:
     void knobFactory(float rangeFloor, float rangeCeiling, float increments, std::string suffixVal, float defaultValue, juce::Slider& knob);
     void labelFactory(std::string tag, juce::Label& label);
     void setOnClicks();
-
+    void setToggleable();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ColourCombV4AudioProcessorEditor)
 };

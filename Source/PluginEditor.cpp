@@ -19,6 +19,7 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     qValKnob.setSliderStyle(juce::Slider::Rotary);
     qValKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 90, 0);
     qValKnob.setPopupDisplayEnabled(true, false, this);
+
     qLabel.setText("Q Knob", juce::dontSendNotification);
     qLabel.setColour(juce::Label::textColourId, juce::Colours::black);
     qLabel.setJustificationType(juce::Justification::centred);
@@ -54,21 +55,16 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     spectrumAnalyzer = juce::Rectangle<int>(40, 50, 400, 200);
 
     setOnClicks();
+    setToggleable();
 
     // Key buttons
     addAndMakeVisible(cKey);
-
     addAndMakeVisible(dKey);
-
     addAndMakeVisible(eKey);
     addAndMakeVisible(fKey);
-
     addAndMakeVisible(gKey);
-
     addAndMakeVisible(aKey);
-
     addAndMakeVisible(bKey);
-
 
     addAndMakeVisible(cSharpKey);
     addAndMakeVisible(dSharpKey);
@@ -77,15 +73,11 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     addAndMakeVisible(aSharpKey);
 }
 
-ColourCombV4AudioProcessorEditor::~ColourCombV4AudioProcessorEditor()
-{
-
-}
+ColourCombV4AudioProcessorEditor::~ColourCombV4AudioProcessorEditor(){}
 
 //==============================================================================
 void ColourCombV4AudioProcessorEditor::paint(juce::Graphics& g)
 {
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll(juce::Colours::white);
     g.setColour(juce::Colours::black);
     g.setFont(juce::FontOptions(15.0f));
@@ -142,8 +134,12 @@ void ColourCombV4AudioProcessorEditor::knobFactory(float rangeFloor, float range
 }
 
 void ColourCombV4AudioProcessorEditor::setOnClicks() {
+    
     auto setKey = [this](int keyIndex) {
         audioProcessor.parameters.getParameter("key")->setValueNotifyingHost(keyIndex / 11.0f);
+        audioProcessor.toggleActiveFreq(keyIndex);
+        audioProcessor.updateVectorProcessorChain();
+        //figure out how to toggle the current key off if we try to press a sixth key, might need it as a parameter in the function
     };
 
     cKey.onClick = [setKey] { setKey(0); };
@@ -158,4 +154,19 @@ void ColourCombV4AudioProcessorEditor::setOnClicks() {
     aKey.onClick = [setKey] { setKey(9); };
     aSharpKey.onClick = [setKey] { setKey(10); };
     bKey.onClick = [setKey] { setKey(11); };
+}
+
+void ColourCombV4AudioProcessorEditor::setToggleable() {
+    cKey.setClickingTogglesState(true);
+    cSharpKey.setClickingTogglesState(true);
+    dKey.setClickingTogglesState(true);
+    dSharpKey.setClickingTogglesState(true);
+    eKey.setClickingTogglesState(true);
+    fKey.setClickingTogglesState(true);
+    fSharpKey.setClickingTogglesState(true);
+    gKey.setClickingTogglesState(true);
+    gSharpKey.setClickingTogglesState(true);
+    aKey.setClickingTogglesState(true);
+    aSharpKey.setClickingTogglesState(true);
+    bKey.setClickingTogglesState(true);
 }

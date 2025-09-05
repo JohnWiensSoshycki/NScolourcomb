@@ -26,6 +26,7 @@ ColourCombV4AudioProcessor::ColourCombV4AudioProcessor()
     parameters.addParameterListener("makeup", this);
     parameters.addParameterListener("key", this);
     parameters.addParameterListener("qFunction", this);
+    parameters.addParameterListener("focusValue", this);
 }
 
 ColourCombV4AudioProcessor::~ColourCombV4AudioProcessor(){}
@@ -148,6 +149,21 @@ void ColourCombV4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, 
     buffer.applyGain(juce::Decibels::decibelsToGain(getMakeupGainValue()));
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //==============================================================================
 bool ColourCombV4AudioProcessor::hasEditor() const { return true; }
 
@@ -176,6 +192,14 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 
 
 
+
+
+
+
+
+
+
+
 //*****************************
 //**********GETTERS****************
 float ColourCombV4AudioProcessor::getMixValue() const {
@@ -194,6 +218,11 @@ int ColourCombV4AudioProcessor::getCurrentFunction() const {
     return static_cast<int>(parameters.getRawParameterValue("qFunction")->load());
 }
 
+float ColourCombV4AudioProcessor::getFocusValue() const {
+    return parameters.getRawParameterValue("focusValue")->load();
+}
+
+
 //*********EXTRA__SETTERS*****
 void ColourCombV4AudioProcessor::setTargetFrequencies(const std::vector<float>& freqs) {
     currentFrequencies = freqs;
@@ -208,22 +237,30 @@ void ColourCombV4AudioProcessor::setFrequencyBounds(float floorhz, float ceiling
 
 //**********AVPTS__PARAMETERS*********
 void ColourCombV4AudioProcessor::parameterChanged(const juce::String& parameterID, float newValue) {
-    if (parameterID == "q" || parameterID == "mix" || parameterID == "makeup" || parameterID == "key" || parameterID == "qFunction") {
+    if (parameterID == "q" || parameterID == "mix" || parameterID == "makeup" || parameterID == "key" || parameterID == "qFunction"
+        || parameterID == "focusValue") {
         //std::cout << "Parameter changed: " << parameterID << " = " << newValue << std::endl;
         //juce::Logger::writeToLog("Q changed to: " + juce::String(getQValue()));
         setTargetFrequencies(noteFrequencies[getCurrentKey()]);
-        updateAllFilters();
+        if (useVectorChain) {
+            updateVectorProcessorChain();
+        }
+        else {
+            updateAllFilters();
+        }
     }
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout ColourCombV4AudioProcessor::createParameterLayout() {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("q", "Q", juce::NormalisableRange<float>(10.0f, 300.0f, 2.0f), 120.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("q", "Q", juce::NormalisableRange<float>(1.0f, 100.0f, 2.0f), 20.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("makeup", "Makeup", juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("key", "Key", juce::StringArray({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }), 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("qFunction", "Q Function", juce::StringArray({ "Sine", "Inv Sine" }), 0));
+    //added a pushback for the layout
+    params.push_back(std::make_unique <juce::AudioParameterFloat>("focusValue", "Focus Value", juce::NormalisableRange<float>(1.0f, 100.0f, 1.0f), 0.0f));
 
     return { params.begin(), params.end() };
 }
@@ -258,6 +295,12 @@ void ColourCombV4AudioProcessor::updateFilterChainForChannel(
 
 
 
+
+
+
+
+
+
 //****************MultiNoteUpdateVectorProcessChain**********
 void ColourCombV4AudioProcessor::updateVectorProcessorChain() {
     vectorProcessorChain.clear();
@@ -276,16 +319,15 @@ void ColourCombV4AudioProcessor::updateVectorProcessorChain() {
                     float q = 10;
                     auto pi = juce::MathConstants<float>::pi;
                     if (getCurrentFunction() == 0) {
-                        float freqRad = ((specificFreq - 15000) / 10000) * (1 / 180) * pi;
-                        float freqMapping = ((specificFreq / 1.6) - ((5000 * sin(freqRad)) + 5000)) / qratio;
-                        q = juce::jlimit(0.2f, 30.0f, freqMapping);
+                     
+                        float freqMapping = (900 * std::sin((juce::MathConstants<float>::pi * specificFreq) / 44100.0f)) / qratio;
+                        q = juce::jlimit(1.0f, 50.0f, freqMapping);
+                 
                     }
                     else if (getCurrentFunction() == 1) {
-                        float scaledFreq = juce::jmap(specificFreq, 60.0f, 18000.0f, 0.0f, 1.0f);  // Normalize frequency range to 0–1
-                        float shaped = std::sin(scaledFreq * juce::MathConstants<float>::pi); // sin(pi * x), peak at 0.5 (midrange)
-                        float dipFactor = 1.0f - shaped;  // Invert to have lowest value at midrange
-                        float freqMapping = ((specificFreq / 2.0f) - (dipFactor * 6000.0f)) / qratio;
-                        q = juce::jlimit(0.2f, 30.0f, freqMapping);
+                    
+                        float freqMapping = (900 * (-1 * std::sin((juce::MathConstants<float>::pi * specificFreq)) / 44100.0f)) / qratio;
+                        q = juce::jlimit(1.0f, 50.0f, freqMapping);
                     }
                     juce::dsp::ProcessorDuplicator<
                         juce::dsp::IIR::Filter<float>,
@@ -298,6 +340,36 @@ void ColourCombV4AudioProcessor::updateVectorProcessorChain() {
             }
         }
     }
+    //high and low shelf filters go here
+    
+    juce::dsp::ProcessorDuplicator<
+        juce::dsp::IIR::Filter<float>,
+        juce::dsp::IIR::Coefficients<float>> newFilter;
+    float focusVal = getFocusValue();
+    constexpr float maxCutDb = -60.0f;     // tweak to taste (e.g., -24, -36)
+    constexpr float gamma = 1.4f;       // response shaping
+
+    const float t = juce::jlimit(0.0f, 1.0f, focusVal / 100.0f);
+    const float cutDb = juce::Decibels::decibelsToGain((t == 0.0f) ? 0.0f : maxCutDb * std::pow(t, gamma));
+  
+
+    //auto coeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate()* (focusVal / 100.f), 200.f);
+    auto coeffs = juce::dsp::IIR::Coefficients<float>::makeLowShelf(getSampleRate(), 200.f, 1.0f, cutDb);
+    *newFilter.state = *coeffs;
+    newFilter.prepare(spec);
+    vectorProcessorChain.push_back(std::move(newFilter));
+    
+    
+    juce::dsp::ProcessorDuplicator<
+        juce::dsp::IIR::Filter<float>,
+        juce::dsp::IIR::Coefficients<float>> highShelfFilter;
+    //coeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate()*(focusVal/100.f), 11000.f);
+    coeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), 11000.f, 1.0f, cutDb);
+    *highShelfFilter.state = *coeffs;
+    highShelfFilter.prepare(spec);
+    vectorProcessorChain.push_back(std::move(highShelfFilter));
+
+
 }
 
 

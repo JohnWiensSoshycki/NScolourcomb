@@ -44,10 +44,12 @@ private:
     juce::Slider qValKnob;
     juce::Slider makeupKnob;
     juce::Slider mixKnob;
+    juce::Slider focusSlider;
 
     juce::Label qLabel;
     juce::Label makeupLabel;
     juce::Label mixLabel;
+    juce::Label focusLabel;
 
     juce::ComboBox functionBox;
 
@@ -55,6 +57,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> makeupAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> functionAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> focusAttachment;
+
 
     void knobFactory(float rangeFloor, float rangeCeiling, float increments, std::string suffixVal, float defaultValue, juce::Slider& knob);
     void labelFactory(std::string tag, juce::Label& label);

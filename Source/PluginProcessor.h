@@ -64,7 +64,7 @@ public:
     float getQValue() const;
     int getCurrentKey() const;
     int getCurrentFunction() const;
-
+    float getFocusValue() const;
 
     void setTargetFrequencies(const std::vector<float>& freqs);
     void setFrequencyBounds(float floorhz, float ceilinghz);
@@ -84,7 +84,9 @@ private:
         juce::dsp::ProcessorChain<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
         juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
         juce::dsp::IIR::Filter<float>> filterChainLeft, filterChainRight;
+   
 
+    float thingy = 100.f;
     double currentSampleRate = 44100.0;
     float frequencyFloor = 200.0f;
     float frequencyCeiling = 10000.0f;
@@ -144,11 +146,17 @@ void updateFilterChainRecursive(
             float freq = freqs[Index];
             float q = 10;
             if (currentFunction == 0) {
-                double pi = 3.1415926535897931f;
+                //double pi = 3.1415926535897931f;
                 //float q = juce::jlimit(0.707f, 30.0f, freq / 30.0f);
+                /*
                 float freqRad = ((freq - 15000) / 10000) * (1 / 180) * pi;
                 float freqMapping = ((freq / 1.6) - ((5000 * sin(freqRad)) + 5000)) / qratio;
-                q = juce::jlimit(0.5f, 30.0f, freqMapping);
+                */
+                float freqMapping = (600 * std::sin((juce::MathConstants<float>::pi * freq) / 44100.0f)) / qratio;
+                q = juce::jlimit(1.0f, 40.0f, freqMapping);
+
+
+                
             }
 
             else if (currentFunction == 1) {
@@ -158,24 +166,13 @@ void updateFilterChainRecursive(
                 float freqMapping = ((freq / 2.0f) - (dipFactor * 6000.0f)) / qratio;
                 q = juce::jlimit(0.5f, 30.0f, freqMapping);
             }
-            //juce::Logger::writeToLog(" | Freq: " + juce::String(freq) + " | Qratio: " + juce::String(qKnobVal) + " | Q used: " + juce::String(q));
-            //Logger::writeToLog(
-               // " | Freq: " + juce::String(freq) +
-              //  " | Qratio: " + juce::String(qKnobVal) +
-               // " | Q used: " + juce::String(q));
-
-            //DBG("Q[" << Index << "] = " << q << ", freq = " << freq);
-
-            auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(sampleRate, freq, q);
-            //chain.template get<Index>().setCoefficients(coeffs);
-
-            //*chain.template get<Index>().state = *coeffs;
+            juce::Logger::writeToLog(" | Freq: " + juce::String(freq) + " | Qratio: " + juce::String(qKnobVal) + " | Q used: " + juce::String(q));
+            auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(sampleRate, freq, q); 
             chain.template get<Index>().coefficients = coeffs;
         }
         else
         {
             auto allpass = juce::dsp::IIR::Coefficients<float>::makeAllPass(sampleRate, 1000.0f);
-            //*chain.template get<Index>().state = *coeffs;
             *chain.template get<Index>().coefficients = *allpass;
         }
 

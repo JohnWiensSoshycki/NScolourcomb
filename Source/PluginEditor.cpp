@@ -13,12 +13,14 @@
 ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4AudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
 {
-    setSize(896, 512);
+    setSize(512, 468);
 
     // Q value knob
     qValKnob.setSliderStyle(juce::Slider::Rotary);
     qValKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 90, 0);
     qValKnob.setPopupDisplayEnabled(true, false, this);
+    //just added q Value Knob range
+    //qValKnob.setRange(1.0f, 100.f, 0.5f);
 
     qLabel.setText("Q Knob", juce::dontSendNotification);
     qLabel.setColour(juce::Label::textColourId, juce::Colours::black);
@@ -35,6 +37,13 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     addAndMakeVisible(makeupKnob);
     addAndMakeVisible(makeupLabel);
     makeupAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.parameters, "makeup", makeupKnob);
+
+    //focusSlider
+    knobFactory(0.f, 100.0f, 1.0f, " Focus", 0.0f, focusSlider);
+    focusSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    addAndMakeVisible(focusSlider);
+    focusAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.parameters, "focusValue", focusSlider);
+    labelFactory("Focus", focusLabel);
 
     // Mix knob
     knobFactory(0.0f, 100.0f, 0.2f, " Mix", 100.0f, mixKnob);
@@ -82,30 +91,33 @@ void ColourCombV4AudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(juce::Colours::black);
     g.setFont(juce::FontOptions(15.0f));
     g.drawFittedText("ColourComb", 0, 0, getWidth(), 30, juce::Justification::centred, 1);
-    g.drawRect(spectrumAnalyzer, 2);
+    //spectrum analyzer placeholder below
+    //g.drawRect(spectrumAnalyzer, 2);
 }
 
 void ColourCombV4AudioProcessorEditor::resized()
 {
-    qValKnob.setBounds(480, 330, 100, 100);
-    qLabel.setBounds(480, 310, 100, 40);
+    qValKnob.setBounds(80, 40, 100, 100);
+    qLabel.setBounds(80, 120, 100, 40);
 
-    makeupKnob.setBounds(610, 330, 100, 100);
-    makeupLabel.setBounds(610, 310, 100, 40);
+    makeupKnob.setBounds(210, 40, 100, 100);
+    makeupLabel.setBounds(210, 120, 100, 40);
 
-    mixKnob.setBounds(740, 330, 100, 100);
-    mixLabel.setBounds(740, 310, 100, 40);
+    mixKnob.setBounds(340, 40, 100, 100);
+    mixLabel.setBounds(340, 120, 100, 40);
 
-    functionBox.setBounds(470, 50, 200, 50);
+    focusSlider.setBounds(60, 340, 200, 40);
+
+    functionBox.setBounds(60, 380, 200, 50);
 
     auto xIncrement = 50;
-    auto whiteKeyXBase = 60;
-    auto whiteKeyYBase = 370;
-    auto blackKeyXBase = 85;
-    auto blackKeyYBase = 315;
+    auto whiteKeyXBase = 80;
+    auto whiteKeyYBase = 240;
+    auto blackKeyXBase = 105;
+    auto blackKeyYBase = 185;
 
-    cKey.setBounds(60, 370, 45, 80);
-    cSharpKey.setBounds(85, 315, 45, 80);
+    cKey.setBounds(80, 240, 45, 80);
+    cSharpKey.setBounds(105, 185, 45, 80);
     dKey.setBounds(whiteKeyXBase + xIncrement, whiteKeyYBase, 45, 80);
     dSharpKey.setBounds(blackKeyXBase + xIncrement, blackKeyYBase, 45, 80);
     eKey.setBounds(whiteKeyXBase + 2 * xIncrement, whiteKeyYBase, 45, 80);

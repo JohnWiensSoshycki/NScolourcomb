@@ -17,16 +17,13 @@ Rather straightforward if you have installed any other third party plugin for yo
 NewShadesAudio is a small audio company I, John Wiens-Soshycki am trying to create and grow.  The intention of the plugins and projects featured at NewShades are to create more accessible and affordable options to music producers specializing in ColourBass production, an environment where many plugins have non consumer friendly pricing.
 
 ## Development Timeline
-Below is a rather loose timeline I have planned for this plugin.  Not all dates are strict but are rather personal goals for ColourComb's development.
+Old Timeline removed due to personal health reasons.  The new loose timeline is such, none are guaranteed rather personal goals.
 
-2025/07/31
--Have all core logic dsp finished (including up to 5 notes, and corresponding octaves, being filtered.  More q function types and smoothing).
+2026/01/28
+-Demo available in this repo (with MAC and Windows binaries)
 
-2025/08/31
--All gui touch ups being finished including custom knobs, reactive keys (active keys are highlighted), custom background and menu options, settings menu along with user background customizability).
-
-2025/09/31 
--Full release of version 1.0 accessible both in this repo and the NewShades website.
+2026/02/28
+-Release Version 1.0 available on repo and website
 
 ## License
-On god I don't know exactly what this license does but I'm pretty sure it allows you to mess around with the code so ye.
+Standard MIT License, knock yourself out if you wanna use this code.

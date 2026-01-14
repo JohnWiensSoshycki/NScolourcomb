@@ -20,7 +20,7 @@
 /**
 */
 class ColourCombV4AudioProcessor : public juce::AudioProcessor,
-    public juce::AudioProcessorValueTreeState::Listener
+    public juce::AudioProcessorValueTreeState::Listener,  private juce::AsyncUpdater
 {
 public:
     ColourCombV4AudioProcessor();
@@ -65,19 +65,24 @@ public:
     int getCurrentKey() const;
     int getCurrentFunction() const;
     float getFocusValue() const;
+    int getCascadeValue() const;
+    int getMaskValue() const;
 
-    void setTargetFrequencies(const std::vector<float>& freqs);
+    //void setTargetFrequencies(const std::vector<float>& freqs);
     void setFrequencyBounds(float floorhz, float ceilinghz);
 
     // Listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     std::vector<int> activeFreqs = { 0,0,0,0,0,0,0,0,0,0,0,0,0 };
-    void toggleActiveFreq(int x);
-    int numOfActiveFreqs = 1;
-    void updateVectorProcessorChain();
+    //void toggleActiveFreq(int x, int indexPosition);
+    int numOfActiveFreqs = 0;
+    //was 1
+    //void updateVectorProcessorChain();
     juce::dsp::ProcessSpec spec;
     
-
+    float determineQ (float freq, float qRatio, int funcType);
+    void createBank();
+    std::string lastRebuild = "No Rebuild";
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ColourCombV4AudioProcessor)
 
@@ -86,19 +91,13 @@ private:
         juce::dsp::IIR::Filter<float>> filterChainLeft, filterChainRight;
    
 
-    float thingy = 100.f;
-    double currentSampleRate = 44100.0;
+  
+    
     float frequencyFloor = 200.0f;
     float frequencyCeiling = 10000.0f;
-    std::vector<float> currentFrequencies;
+    
 
-    void updateAllFilters();
-    void resetFilters();
-    void updateFilterChainForChannel(
-        juce::dsp::ProcessorChain<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-        juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-        juce::dsp::IIR::Filter<float>>&chain,
-        const std::vector<float>& freqs);
+ 
 
     std::vector<std::vector<float>> noteFrequencies = {
         {130.81f, 261.63f, 523.25f, 1046.50f, 2093.00f, 4186.01f, 8372.02f},
@@ -117,65 +116,41 @@ private:
 
     //vector chain for multiplenotes
     bool useVectorChain = true;  // Set this from UI or private test toggle
-    std::vector<juce::dsp::ProcessorDuplicator<
-        juce::dsp::IIR::Filter<float>,
-        juce::dsp::IIR::Coefficients<float>>> vectorProcessorChain;
+    
+    
+    
+    
+    using Notch = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>,
+                                                     juce::dsp::IIR::Coefficients<float>>;
+    
+    using Shelf = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>,
+    juce::dsp::IIR::Coefficients<float>>;
+    
+    std::vector<std::vector<Notch>> filterBank;
+    std::atomic<int>   cascadeFactor {1}; // 1 or 2
 
-
+  
+    void handleAsyncUpdate() override;
+    void createFilterBank();
+    std::vector<Notch> createHarmonicGroup(int targetNote);
+    void updateHarmonicGroup(int targetNote);
+    void rebuild();
+    void setActiveKeyMask(int mask);
+ 
+    
+    Shelf lowerShelf;
+    Shelf upperShelf;
+    std::atomic<bool> shouldRebuild = false;
+    std::atomic<bool> dspReady = false;
+    std::atomic<bool> isPrepared = false;
+    std::atomic<bool> setStateFlag = false;
+    int activeKeyMask = 0;
+        
+    
 
 };
 
 
 
 
-template <size_t Index = 0>
-void updateFilterChainRecursive(
-    juce::dsp::ProcessorChain<
-    juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-    juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-    juce::dsp::IIR::Filter<float>>&chain,
-    const std::vector<float>& freqs,
-    double sampleRate, float qKnobVal, int currentFunction)
-{
-   
-    if constexpr (Index < 7)
-    {
-        if (Index < freqs.size())
-        {
-            float qratio = qKnobVal;
-            float freq = freqs[Index];
-            float q = 10;
-            if (currentFunction == 0) {
-                //double pi = 3.1415926535897931f;
-                //float q = juce::jlimit(0.707f, 30.0f, freq / 30.0f);
-                /*
-                float freqRad = ((freq - 15000) / 10000) * (1 / 180) * pi;
-                float freqMapping = ((freq / 1.6) - ((5000 * sin(freqRad)) + 5000)) / qratio;
-                */
-                float freqMapping = (600 * std::sin((juce::MathConstants<float>::pi * freq) / 44100.0f)) / qratio;
-                q = juce::jlimit(1.0f, 40.0f, freqMapping);
 
-
-                
-            }
-
-            else if (currentFunction == 1) {
-                float scaledFreq = juce::jmap(freq, 60.0f, 18000.0f, 0.0f, 1.0f);  // Normalize frequency range to 0–1
-                float shaped = std::sin(scaledFreq * juce::MathConstants<float>::pi); // sin(pi * x), peak at 0.5 (midrange)
-                float dipFactor = 1.0f - shaped;  // Invert to have lowest value at midrange
-                float freqMapping = ((freq / 2.0f) - (dipFactor * 6000.0f)) / qratio;
-                q = juce::jlimit(0.5f, 30.0f, freqMapping);
-            }
-            juce::Logger::writeToLog(" | Freq: " + juce::String(freq) + " | Qratio: " + juce::String(qKnobVal) + " | Q used: " + juce::String(q));
-            auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(sampleRate, freq, q); 
-            chain.template get<Index>().coefficients = coeffs;
-        }
-        else
-        {
-            auto allpass = juce::dsp::IIR::Coefficients<float>::makeAllPass(sampleRate, 1000.0f);
-            *chain.template get<Index>().coefficients = *allpass;
-        }
-
-        updateFilterChainRecursive<Index + 1>(chain, freqs, sampleRate, qKnobVal, currentFunction);
-    }
-}

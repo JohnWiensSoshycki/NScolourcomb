@@ -9,6 +9,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+using Notch = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>,
+                                                 juce::dsp::IIR::Coefficients<float>>;
 //==============================================================================
 ColourCombV4AudioProcessor::ColourCombV4AudioProcessor()
     : AudioProcessor(BusesProperties()
@@ -27,6 +29,11 @@ ColourCombV4AudioProcessor::ColourCombV4AudioProcessor()
     parameters.addParameterListener("key", this);
     parameters.addParameterListener("qFunction", this);
     parameters.addParameterListener("focusValue", this);
+    parameters.addParameterListener("cascade", this);
+    parameters.addParameterListener("activeKeyMask", this);
+    parameters.addParameterListener("lowCut", this);
+    parameters.addParameterListener("highCut", this);
+
 }
 
 ColourCombV4AudioProcessor::~ColourCombV4AudioProcessor(){}
@@ -40,7 +47,6 @@ bool ColourCombV4AudioProcessor::acceptsMidi() const
     return false;
 #endif
 }
-
 bool ColourCombV4AudioProcessor::producesMidi() const
 {
 #if JucePlugin_ProducesMidiOutput
@@ -49,7 +55,6 @@ bool ColourCombV4AudioProcessor::producesMidi() const
     return false;
 #endif
 }
-
 bool ColourCombV4AudioProcessor::isMidiEffect() const
 {
 #if JucePlugin_IsMidiEffect
@@ -69,21 +74,40 @@ void ColourCombV4AudioProcessor::changeProgramName(int index, const juce::String
 //==============================================================================
 void ColourCombV4AudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    currentSampleRate = sampleRate;
-
-    //juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumInputChannels();
 
-    filterChainLeft.prepare(spec);
-    filterChainRight.prepare(spec);
-    
 
     setFrequencyBounds(400.0f, 4000.0f);
-    setTargetFrequencies(noteFrequencies[getCurrentKey()]);
-    updateAllFilters();
+    filterBank.clear();
+    filterBank.reserve(noteFrequencies.size());
+    createBank();
+    
+    auto coeffs1 = juce::dsp::IIR::Coefficients<float>::makeLowShelf(spec.sampleRate, 200, 1.f, 0.f);
+    *lowerShelf.state = *coeffs1;
+    auto coeffs2 = juce::dsp::IIR::Coefficients<float>::makeHighShelf(spec.sampleRate, 18000, 1.f, 0.f);
+    *upperShelf.state = *coeffs2;
+    lowerShelf.prepare(spec);
+    upperShelf.prepare(spec);
+
+   
+
+    auto* p= parameters.getRawParameterValue("activeKeyMask");
+    if (p){
+        setActiveKeyMask(getMaskValue());
+    }
+
+    isPrepared.store(true);
+    rebuild();
+
+
 }
+
+
+
+
+
 
 void ColourCombV4AudioProcessor::releaseResources() {}
 
@@ -115,37 +139,35 @@ bool ColourCombV4AudioProcessor::isBusesLayoutSupported(const BusesLayout& layou
 
 
 
+
+
+
 void ColourCombV4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    //*****fixedTemplateProcess*************
-    if (useVectorChain == false) {
-        juce::dsp::AudioBlock<float> block(buffer);
-        if (buffer.getNumChannels() >= 1)
-            filterChainLeft.process(juce::dsp::ProcessContextReplacing<float>(block.getSingleChannelBlock(0)));
-        if (buffer.getNumChannels() >= 2)
-            filterChainRight.process(juce::dsp::ProcessContextReplacing<float>(block.getSingleChannelBlock(1)));
-    }
-    //*******VectorChainProcess**********
-    else if (useVectorChain == true) {
-        juce::dsp::AudioBlock<float> block(buffer);
-        juce::dsp::ProcessContextReplacing<float> context(block);
-        for (auto& filter : vectorProcessorChain) {
-            filter.process(context);
-        }
-    }
+    juce::dsp::AudioBlock<float> block(buffer);
+    juce::dsp::ProcessContextReplacing<float> ctx(block);
+    //jassert ((int) filterBank.size() == (int) activeFreqs.size());
+    for (int note = 0; note < (int) activeFreqs.size(); ++note)
+    {
+        if (activeFreqs[note] != 1) continue;
 
-
+        auto& band = filterBank[note];
+        for (auto& notch : band)
+            notch.process(ctx);
+    }
+    lowerShelf.process(ctx);
+    upperShelf.process(ctx);
+    
     float wet = getMixValue();
     float dry = 1.0f - wet;
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
         buffer.applyGain(ch, 0, buffer.getNumSamples(), wet);
         buffer.addFrom(ch, 0, dryBuffer, ch, 0, dryBuffer.getNumSamples(), dry);
     }
-
     buffer.applyGain(juce::Decibels::decibelsToGain(getMakeupGainValue()));
 }
 
@@ -163,7 +185,7 @@ void ColourCombV4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, 
 
 
 
-
+//============State Information=================================================
 //==============================================================================
 bool ColourCombV4AudioProcessor::hasEditor() const { return true; }
 
@@ -171,22 +193,44 @@ juce::AudioProcessorEditor* ColourCombV4AudioProcessor::createEditor() { return 
 
 //==============================================================================
 void ColourCombV4AudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
+    
     juce::MemoryOutputStream(destData, true).writeString(parameters.state.toXmlString());
 }
 
 void ColourCombV4AudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
+    
     juce::ValueTree tree = juce::ValueTree::fromXml(juce::String::createStringFromData(data, sizeInBytes));
-    if (tree.isValid()) parameters.state = tree;
+    if (tree.isValid()) {
+        parameters.replaceState(tree);
+ 
+    }
+    setStateFlag.store(true);
 }
 
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new ColourCombV4AudioProcessor();
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter(){return new ColourCombV4AudioProcessor();}
+
+
+
+
+
+
+
+
+
+//***************************** MASKS *****************************
+void ColourCombV4AudioProcessor::setActiveKeyMask(int mask){
+    numOfActiveFreqs = 0;
+        for (int i = 0; i < activeFreqs.size(); ++i)
+        {
+            activeFreqs[i] = (mask & (1 << i)) ? 1 : 0;
+            if (activeFreqs[i])
+                ++numOfActiveFreqs;
+
+        }
+
+
 }
-
-
-
 
 
 
@@ -202,31 +246,20 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 
 //*****************************
 //**********GETTERS****************
-float ColourCombV4AudioProcessor::getMixValue() const {
-    return parameters.getRawParameterValue("mix")->load() / 100.0f;
-}
-float ColourCombV4AudioProcessor::getMakeupGainValue() const {
-    return parameters.getRawParameterValue("makeup")->load();
-}
-float ColourCombV4AudioProcessor::getQValue() const {
-    return parameters.getRawParameterValue("q")->load();
-}
-int ColourCombV4AudioProcessor::getCurrentKey() const {
-    return static_cast<int>(parameters.getRawParameterValue("key")->load());
-}
-int ColourCombV4AudioProcessor::getCurrentFunction() const {
-    return static_cast<int>(parameters.getRawParameterValue("qFunction")->load());
-}
+float ColourCombV4AudioProcessor::getMixValue() const {return parameters.getRawParameterValue("mix")->load() / 100.0f;}
+float ColourCombV4AudioProcessor::getMakeupGainValue() const {return parameters.getRawParameterValue("makeup")->load();}
+float ColourCombV4AudioProcessor::getQValue() const {return parameters.getRawParameterValue("q")->load();}
+int ColourCombV4AudioProcessor::getCurrentKey() const {return static_cast<int>(parameters.getRawParameterValue("key")->load());}
+int ColourCombV4AudioProcessor::getCurrentFunction() const {return static_cast<int>(parameters.getRawParameterValue("qFunction")->load());}
+float ColourCombV4AudioProcessor::getFocusValue() const {return parameters.getRawParameterValue("focusValue")->load();}
+int ColourCombV4AudioProcessor::getCascadeValue() const {return static_cast<int>(parameters.getRawParameterValue("cascade")->load());}
+int ColourCombV4AudioProcessor::getMaskValue() const {return parameters.getRawParameterValue("activeKeyMask")->load();}
 
-float ColourCombV4AudioProcessor::getFocusValue() const {
-    return parameters.getRawParameterValue("focusValue")->load();
-}
+
 
 
 //*********EXTRA__SETTERS*****
-void ColourCombV4AudioProcessor::setTargetFrequencies(const std::vector<float>& freqs) {
-    currentFrequencies = freqs;
-}
+
 
 void ColourCombV4AudioProcessor::setFrequencyBounds(float floorhz, float ceilinghz) {
     frequencyFloor = floorhz;
@@ -237,56 +270,50 @@ void ColourCombV4AudioProcessor::setFrequencyBounds(float floorhz, float ceiling
 
 //**********AVPTS__PARAMETERS*********
 void ColourCombV4AudioProcessor::parameterChanged(const juce::String& parameterID, float newValue) {
-    if (parameterID == "q" || parameterID == "mix" || parameterID == "makeup" || parameterID == "key" || parameterID == "qFunction"
-        || parameterID == "focusValue") {
-        //std::cout << "Parameter changed: " << parameterID << " = " << newValue << std::endl;
-        //juce::Logger::writeToLog("Q changed to: " + juce::String(getQValue()));
-        setTargetFrequencies(noteFrequencies[getCurrentKey()]);
-        if (useVectorChain) {
-            updateVectorProcessorChain();
-        }
-        else {
-            updateAllFilters();
-        }
+    if (!isPrepared){
+        return;
     }
+    
+    if (parameterID == "q" || parameterID == "key" || parameterID == "qFunction"
+        || parameterID == "focusValue") {
+        handleAsyncUpdate();
+    }
+
+    else if (parameterID == "activeKeyMask"){
+        
+        int mask = (int) parameters.getRawParameterValue("activeKeyMask")->load();
+        setActiveKeyMask(mask);
+        handleAsyncUpdate();
+    }
+    
+     
+     
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout ColourCombV4AudioProcessor::createParameterLayout() {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("q", "Q", juce::NormalisableRange<float>(1.0f, 100.0f, 2.0f), 20.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("makeup", "Makeup", juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("key", "Key", juce::StringArray({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }), 0));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("qFunction", "Q Function", juce::StringArray({ "Sine", "Inv Sine" }), 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("q",1), "Q", juce::NormalisableRange<float>(1.0f, 100.0f, 2.0f), 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("mix",1), "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("makeup",1), "Makeup", juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID("key",1), "Key", juce::StringArray({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }), 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID("qFunction",1), "Q Function", juce::StringArray({ "Sine", "Inv Sine" , "Constant"}), 0));
     //added a pushback for the layout
-    params.push_back(std::make_unique <juce::AudioParameterFloat>("focusValue", "Focus Value", juce::NormalisableRange<float>(1.0f, 100.0f, 1.0f), 0.0f));
-
+    params.push_back(std::make_unique <juce::AudioParameterFloat>(juce::ParameterID("focusValue",1), "Focus Value", juce::NormalisableRange<float>(0.1f, 1.0f, 0.05f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID("cascade",1), "Cascade", juce::StringArray({ "x1", "x2"}), 0));
+    //new
+    
+    params.push_back(std::make_unique<juce::AudioParameterInt>(juce::ParameterID("activeKeyMask",1),"Active Key Mask",0,(1<<12)-1,0));
+    
+    //Two float parameters can have full range, set to 0 and max hz for low and high respectively.  Logic in parameterchanged
+    //will forceably correct them such that lowcut < highcut.  Processblock will check to see if a note enabled
+    //lies in between, if not we simply skip the process call
+    
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("lowCut",1),"Low Cut",0.f,22000.f,0.f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("highCut",1),"High Cut",0.f,22000.f,22000.f));
+    
+    
     return { params.begin(), params.end() };
-}
-
-//***********FILTER__UPDATES******
-void ColourCombV4AudioProcessor::updateAllFilters() {
-    updateFilterChainForChannel(filterChainLeft, currentFrequencies);
-    updateFilterChainForChannel(filterChainRight, currentFrequencies);
-}
-
-void ColourCombV4AudioProcessor::resetFilters() {
-    filterChainLeft.reset();
-    filterChainRight.reset();
-}
-
-void ColourCombV4AudioProcessor::updateFilterChainForChannel(
-    juce::dsp::ProcessorChain<
-    juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-    juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-    juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Filter<float>,
-    juce::dsp::IIR::Filter<float>
-    >& chain,
-    const std::vector<float>& freqs)
-{
-    //juce::Logger::writeToLog("function changing to: " + juce::String(getCurrentFunction()));
-    updateFilterChainRecursive(chain, freqs, getSampleRate(), getQValue(), getCurrentFunction());
+    
 }
 
 
@@ -301,85 +328,97 @@ void ColourCombV4AudioProcessor::updateFilterChainForChannel(
 
 
 
-//****************MultiNoteUpdateVectorProcessChain**********
-void ColourCombV4AudioProcessor::updateVectorProcessorChain() {
-    vectorProcessorChain.clear();
-    //filter through the thirteen possible keynotes
-    for (int keyIndex = 0; keyIndex < activeFreqs.size(); ++keyIndex) {
-        //if a key note is 1, active, we create a filter for its harmonics
-        if (activeFreqs[keyIndex] == 1) {
-            //loop thorugh all the possible harmonics that we have stored in the noteFrequencyTable
-            for (int harmonicIndex = 0; harmonicIndex < 6; ++harmonicIndex) {
-                auto specificFreq = noteFrequencies[keyIndex][harmonicIndex];
 
-                //so long as the harmonic is range make a filter for it
-                if (frequencyFloor <= specificFreq && specificFreq <= frequencyCeiling) {
-                    // Add filter for this specificFreq here
-                    float qratio = getQValue();
-                    float q = 10;
-                    auto pi = juce::MathConstants<float>::pi;
-                    if (getCurrentFunction() == 0) {
-                     
-                        float freqMapping = (900 * std::sin((juce::MathConstants<float>::pi * specificFreq) / 44100.0f)) / qratio;
-                        q = juce::jlimit(1.0f, 50.0f, freqMapping);
-                 
-                    }
-                    else if (getCurrentFunction() == 1) {
-                    
-                        float freqMapping = (900 * (-1 * std::sin((juce::MathConstants<float>::pi * specificFreq)) / 44100.0f)) / qratio;
-                        q = juce::jlimit(1.0f, 50.0f, freqMapping);
-                    }
-                    juce::dsp::ProcessorDuplicator<
-                        juce::dsp::IIR::Filter<float>,
-                        juce::dsp::IIR::Coefficients<float>> newFilter;
-                    auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(getSampleRate(), specificFreq, q);
-                    *newFilter.state = *coeffs;
-                    newFilter.prepare(spec);
-                    vectorProcessorChain.push_back(std::move(newFilter));
-                }
-            }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void ColourCombV4AudioProcessor::createBank(){
+    
+    for (int x=0; x < noteFrequencies.size(); x++){
+        std::vector<Notch> band = createHarmonicGroup(x);
+        filterBank.push_back(std::move(band));
+    }
+}
+
+std::vector<Notch> ColourCombV4AudioProcessor::createHarmonicGroup(int targetNote){
+    std::vector<Notch> notes;
+    for (int y=0; y < noteFrequencies[targetNote].size(); y++){
+        Notch newFilter;
+        float targetFreq = noteFrequencies[targetNote][y];
+        float q = determineQ(targetFreq,getQValue(),0);
+        auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(getSampleRate(), targetFreq, q);
+        *newFilter.state = *coeffs;
+        newFilter.prepare(spec);
+        notes.push_back(std::move(newFilter));
+    }
+    return notes;
+}
+
+void ColourCombV4AudioProcessor::updateHarmonicGroup(int targetNote){
+    for (int y=0; y < filterBank[targetNote].size(); y++){
+        Notch &filter = filterBank[targetNote][y];
+        float targetFreq = noteFrequencies[targetNote][y];
+        float q = determineQ(targetFreq,getQValue(),getCurrentFunction());
+        auto coeffs = juce::dsp::IIR::Coefficients<float>::makeNotch(getSampleRate(), targetFreq, q);
+        *filter.state = *coeffs;
+    }
+}
+
+
+
+
+float ColourCombV4AudioProcessor::determineQ(float freq, float qRatio, int funcType){
+    //sine
+    float q = 1.0f;
+    if (funcType == 0){
+        float freqMapping = (900 * std::sin((juce::MathConstants<float>::pi * freq) / spec.sampleRate)) / (qRatio/2);
+        q = juce::jlimit(0.4f, 5.0f, freqMapping);}
+    //1.0f, 50.f
+    //inv sine
+    else if (funcType == 1){
+        float freqMapping = (600 * (1.0f-std::sin((juce::MathConstants<float>::pi * freq) / spec.sampleRate))) / qRatio;
+        q = juce::jlimit(1.0f, 50.0f, freqMapping);}
+    //constant
+    else if (funcType == 2){
+        float freqMapping = 400/ qRatio;
+        q = juce::jlimit(1.0f, 50.0f, freqMapping);}
+    return q;
+}
+
+
+
+void ColourCombV4AudioProcessor::rebuild(){
+
+    
+    
+    for (int x=0; x < activeFreqs.size(); x++){
+        if (activeFreqs[x]==1){
+            updateHarmonicGroup(x);
         }
     }
-    //high and low shelf filters go here
-    
-    juce::dsp::ProcessorDuplicator<
-        juce::dsp::IIR::Filter<float>,
-        juce::dsp::IIR::Coefficients<float>> newFilter;
-    float focusVal = getFocusValue();
-    constexpr float maxCutDb = -60.0f;     // tweak to taste (e.g., -24, -36)
-    constexpr float gamma = 1.4f;       // response shaping
+    auto coeffs1 = juce::dsp::IIR::Coefficients<float>::makeLowShelf(spec.sampleRate, 200, 1.f, getFocusValue());
+    *lowerShelf.state = *coeffs1;
+    auto coeffs2 = juce::dsp::IIR::Coefficients<float>::makeHighShelf(spec.sampleRate, 18000, 1.f, getFocusValue());
+    *upperShelf.state = *coeffs2;
+}
 
-    const float t = juce::jlimit(0.0f, 1.0f, focusVal / 100.0f);
-    const float cutDb = juce::Decibels::decibelsToGain((t == 0.0f) ? 0.0f : maxCutDb * std::pow(t, gamma));
-  
-
-    //auto coeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate()* (focusVal / 100.f), 200.f);
-    auto coeffs = juce::dsp::IIR::Coefficients<float>::makeLowShelf(getSampleRate(), 200.f, 1.0f, cutDb);
-    *newFilter.state = *coeffs;
-    newFilter.prepare(spec);
-    vectorProcessorChain.push_back(std::move(newFilter));
-    
-    
-    juce::dsp::ProcessorDuplicator<
-        juce::dsp::IIR::Filter<float>,
-        juce::dsp::IIR::Coefficients<float>> highShelfFilter;
-    //coeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate()*(focusVal/100.f), 11000.f);
-    coeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), 11000.f, 1.0f, cutDb);
-    *highShelfFilter.state = *coeffs;
-    highShelfFilter.prepare(spec);
-    vectorProcessorChain.push_back(std::move(highShelfFilter));
-
-
+void ColourCombV4AudioProcessor::handleAsyncUpdate(){
+    rebuild();
 }
 
 
-void ColourCombV4AudioProcessor::toggleActiveFreq(int x) {
-    if (activeFreqs[x] == 0 && numOfActiveFreqs < 5) {
-        activeFreqs[x] = 1;
-        numOfActiveFreqs++;
-    }
-    else if (activeFreqs[x] == 1) {
-        activeFreqs[x] = 0;
-        numOfActiveFreqs--;
-    }
-}

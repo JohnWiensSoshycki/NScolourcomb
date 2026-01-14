@@ -1,5 +1,5 @@
 # NScolourcomb
-This repo contains the free vst3 and source code to the NewShadesAudio ColourComb plugin.
+This repo contains the free vst3 and source code to the NewShadesAudio ColourComb plugin.  At the current date of Jan 14, 2026 the vst3 binaries have not yet been updated for both mac and windows, only source code is upto date.
 
 ## What is ColourComb?
 ColourComb is a vst3 plugin designed for electronic music producers, primarily those associated with the genre of ColourBass/Future Riddim.

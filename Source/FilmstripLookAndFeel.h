@@ -35,6 +35,8 @@ struct FilmstripLookAndFeel : public juce::LookAndFeel_V4
                           float sliderPosProportional, float /*rotaryStart*/, float /*rotaryEnd*/,
                           juce::Slider& slider) override
     {
+        
+        
         // Normalized [0..1] from the slider’s actual range:
         const auto t = juce::jlimit(0.0f, 1.0f,
             (float)((slider.getValue() - slider.getMinimum()) / (slider.getMaximum() - slider.getMinimum())));
@@ -49,14 +51,7 @@ struct FilmstripLookAndFeel : public juce::LookAndFeel_V4
         const auto destX = cx - destW * 0.5f;
         const auto destY = cy - destH * 0.5f;
         
-        //===========================
-        //punchout fix
-        /*
-        g.saveState();
-        juce::Path clip;
-        clip.addEllipse (dest.reduced (0.5f)); // small reduce to avoid off-by-one edge pixels
-        g.reduceClipRegion (clip);
-       */
+        
 
         if (isVertical)
         {
@@ -103,6 +98,37 @@ struct FilmstripLookAndFeel : public juce::LookAndFeel_V4
                         srcX, 0, frameWidth, frameHeight);
         }
     }
+    
+    
+    
+    //double click to set value functionality
+    juce::Label* createSliderTextBox (juce::Slider& slider) override
+    {
+        // Let JUCE create the default textbox
+        auto* label = juce::LookAndFeel_V4::createSliderTextBox (slider);
+
+        if (label != nullptr)
+        {
+            // Disable single-click editing
+            // Enable double-click editing
+            label->setEditable (false, true, false);
+            label->setInterceptsMouseClicks (true, true);
+            // Optional but recommended polish
+            label->setJustificationType (juce::Justification::centred);
+            label->setKeyboardType (juce::TextInputTarget::decimalKeyboard);
+
+            // Prevent accidental dragging selecting text
+            label->setInterceptsMouseClicks (true, false);
+        }
+
+        return label;
+    }
+    
+    //bonus double click behaviour
+    
+    
+    
+    
 
 private:
     juce::Image filmstrip;

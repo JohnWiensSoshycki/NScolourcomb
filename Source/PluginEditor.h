@@ -25,6 +25,78 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     //void timerCallback();
+    
+    class EditableFilmstripSlider : public juce::Slider
+    {
+    public:
+        std::unique_ptr<juce::TextEditor> valueEditor;
+        EditableFilmstripSlider()
+        {
+            setTextBoxStyle (juce::Slider::NoTextBox, false, 50, 20);
+            setTextBoxIsEditable (true);
+            
+            
+        }
+
+        void mouseDoubleClick (const juce::MouseEvent& e) override
+        {
+            showEditor();
+        }
+        
+        void showEditor(){
+            if (valueEditor != nullptr)
+                return;
+            
+            valueEditor = std::make_unique<juce::TextEditor>();
+            addAndMakeVisible(*valueEditor);
+            
+            valueEditor->setText(juce::String(getValue()), false);
+            valueEditor->setJustification(juce::Justification::centred);
+            valueEditor->selectAll();
+            valueEditor->grabKeyboardFocus();
+            
+            valueEditor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2b2b2b));
+            
+            auto compRect = getLocalBounds();
+            valueEditor->setBounds(compRect.getX() + (compRect.getWidth()*0.2),
+            compRect.getY() + (compRect.getHeight()*0.3), compRect.getWidth()*0.6, compRect.getHeight()*0.4);
+            
+            //return values
+            valueEditor->onReturnKey = [this](){
+                commitEditorValue();
+                hideEditor();
+            };
+            valueEditor->onEscapeKey = [this](){
+                hideEditor();
+            };
+            valueEditor->onFocusLost = [this](){
+              hideEditor();
+            };
+            
+        
+        }
+        
+        void commitEditorValue(){
+            if (valueEditor == nullptr)
+                return;
+            
+            auto text = valueEditor->getText();
+            double newValue = text.getDoubleValue();
+            
+            newValue = juce::jlimit(getMinimum(), getMaximum(), newValue);
+            setValue(newValue, juce::sendNotificationSync);
+            
+            //hideEditor();
+        }
+        
+        void hideEditor(){
+            if (valueEditor != nullptr){
+                valueEditor.reset();
+            }
+        }
+        
+        
+    };
 
 private:
     ColourCombV4AudioProcessor& audioProcessor;
@@ -37,7 +109,7 @@ private:
     FilmstripLookAndFeel highCutLNF;
     
 
-    juce::Rectangle<int> spectrumAnalyzer;
+
     juce::TextButton cKey{ "C" };
     juce::TextButton cSharpKey{ "C#" };
     juce::TextButton dKey{ "D" };
@@ -54,12 +126,21 @@ private:
     std::vector<juce::TextButton*> allKeys = {&cKey,&cSharpKey, &dKey, &dSharpKey,
      &eKey,&fKey,&fSharpKey,&gKey,&gSharpKey,&aKey,&aSharpKey,&bKey};
     
-    juce::Slider qValKnob;
-    juce::Slider makeupKnob;
-    juce::Slider mixKnob;
+    EditableFilmstripSlider qValKnob;
+    EditableFilmstripSlider makeupKnob;
+    EditableFilmstripSlider mixKnob;
+    EditableFilmstripSlider focusSlider;
+    EditableFilmstripSlider lowCutKnob;
+    EditableFilmstripSlider highCutKnob;
+    
+    //juce::Slider mixKnob;
+    /*
+     juce::Slider qValKnob;
+     juce::Slider makeupKnob;
     juce::Slider focusSlider;
     juce::Slider lowCutKnob;
     juce::Slider highCutKnob;
+     */
 
     juce::Label qLabel;
     juce::Label makeupLabel;
@@ -70,8 +151,12 @@ private:
     juce::Label filterVectorLabel;
     juce::Label rebuildLabel;
 
+    juce::Label lowCutLabel;
+    juce::Label highCutLabel;
+    
     juce::ComboBox functionBox;
     juce::Image backgroundBaseplate;
+    juce::Image logo;
     
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> qAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
@@ -95,4 +180,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ColourCombV4AudioProcessorEditor)
 };
+
 

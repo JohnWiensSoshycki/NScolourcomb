@@ -41,16 +41,18 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
                      BinaryData::knob_strip_pngSize),
          72, 72, 100, false)
 {
-    setSize(512, 542);
+    setSize(512, 512);
     //old size 512 512 -> 512 542
     
     
     
     // Q value knob
     qValKnob.setSliderStyle(juce::Slider::Rotary);
-    qValKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 90, 0);
-    qValKnob.setPopupDisplayEnabled(true, false, this);
+    //changing (juce::Slider::NoTextBox, false, 90, 0) to (juce::Slider::NoTextBox, false, 0, 0)
+    qValKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    qValKnob.setPopupDisplayEnabled(true, true, this);
     qValKnob.setLookAndFeel(&qValLNF);
+    
     
 
     qLabel.setText("Q Knob", juce::dontSendNotification);
@@ -77,6 +79,7 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     addAndMakeVisible(focusSlider);
     focusAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.parameters, "focusValue", focusSlider);
     labelFactory("Focus", focusLabel);
+    addAndMakeVisible(focusLabel);
 
     // Mix knob
     knobFactory(0.0f, 100.0f, 0.2f, " Mix", 100.0f, mixKnob);
@@ -94,11 +97,24 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     functionBox.addItem("Constant", 3);
     functionAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.parameters, "qFunction", functionBox);
     addAndMakeVisible(functionBox);
-    functionBox.setSelectedId(1);
+    //functionBox.setSelectedId(1);
 
-    spectrumAnalyzer = juce::Rectangle<int>(40, 50, 400, 200);
     
-   
+    //lowCut knob
+    knobFactory(0.f, 8000.f, 10.f, " lowCut", 0.f, lowCutKnob);
+    lowCutKnob.setLookAndFeel(&lowCutLNF);
+    labelFactory("Low Cut", lowCutLabel);
+    lowCutAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.parameters, "lowCut", lowCutKnob);
+    addAndMakeVisible(lowCutKnob);
+    addAndMakeVisible(lowCutLabel);
+    
+    //highCut knob
+    knobFactory(8000.f, 22000.f, 10.0f, " highCut", 22000.f, highCutKnob);
+    highCutKnob.setLookAndFeel(&highCutLNF);
+    labelFactory("High Cut", highCutLabel);
+    highCutAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.parameters, "highCut", highCutKnob);
+    addAndMakeVisible(highCutKnob);
+    addAndMakeVisible(highCutLabel);
 
     
     
@@ -132,7 +148,8 @@ ColourCombV4AudioProcessorEditor::ColourCombV4AudioProcessorEditor(ColourCombV4A
     //addAndMakeVisible(rebuildLabel);
     
     
-    backgroundBaseplate = loadImageFromBinary(BinaryData::Baseplate_png, BinaryData::Baseplate_pngSize);    
+    backgroundBaseplate = loadImageFromBinary(BinaryData::Baseplate_png, BinaryData::Baseplate_pngSize);
+    logo = loadImageFromBinary(BinaryData::ColourcombLogoFirstAttempt_png, BinaryData::ColourcombLogoFirstAttempt_pngSize);
     startTimerHz(3);
     
     
@@ -163,18 +180,20 @@ void ColourCombV4AudioProcessorEditor::paint(juce::Graphics& g)
 {
 
     g.fillAll(juce::Colours::black);
-    //g.fillAll(juce::Colour(0xFF353C40));
     g.drawImageAt(backgroundBaseplate,0,0);
+    /*
+    g.setColour(juce::Colours::black);
+    g.fillRect(0, 0, 512, 50);
+     */
+    g.drawImageAt(logo,0,10);
     g.setColour(juce::Colour(0xFFFFFFFF));
     g.setFont(juce::FontOptions(15.0f));
-
-
 }
 
 void ColourCombV4AudioProcessorEditor::resized()
 {
     //the bonus +10 for the top and second row are to account for logo
-    int topRow = 40 + 20;
+    int topRow = 40 + 10;
     qValKnob.setBounds(80, topRow, 100, 100);
     qLabel.setBounds(80, topRow+80, 100, 40);
 
@@ -184,25 +203,29 @@ void ColourCombV4AudioProcessorEditor::resized()
     mixKnob.setBounds(340, topRow, 100, 100);
     mixLabel.setBounds(340, topRow+80, 100, 40);
     
-    //numActiveNotesLabel.setBounds(40, 300, 200, 40);
-    //rebuildLabel.setBounds(200, 10, 100, 50);
-    int secondRow = topRow + 92 + 20 + 20;
+    int secondRow = topRow + 92 + 10;
 
     focusSlider.setBounds(80, secondRow, 100, 100);
+    focusLabel.setBounds(80, secondRow+80, 100, 40);
     
+    lowCutKnob.setBounds(210, secondRow, 100, 100);
+    lowCutLabel.setBounds(210, secondRow+80, 100, 40);
+    
+    highCutKnob.setBounds(340, secondRow, 100, 100);
+    highCutLabel.setBounds(340, secondRow+80, 100, 40);
     
     //any +30 at the end are to test the total size
-    int thirdRow= 380+25 + 50;
-    functionBox.setBounds(60, thirdRow, 200, 50);
+    int thirdRow= 380+25 + 40;
+    functionBox.setBounds(156, thirdRow, 200, 50);
 
     numActiveNotesLabel.setBounds(350, 10, 100, 50);
     filterVectorLabel.setBounds(350, 360, 100, 80);
 
     auto xIncrement = 50;
     auto whiteKeyXBase = 85;
-    auto whiteKeyYBase = 240+75+50;
+    auto whiteKeyYBase = 240+75+30;
     auto blackKeyXBase = 110;
-    auto blackKeyYBase = 185+75+50;
+    auto blackKeyYBase = 185+75+30;
 
     cKey.setBounds(whiteKeyXBase, whiteKeyYBase, 45, 80);
     cSharpKey.setBounds(blackKeyXBase, blackKeyYBase, 45, 80);
@@ -241,11 +264,12 @@ void ColourCombV4AudioProcessorEditor::labelFactory(std::string tag, juce::Label
 
 void ColourCombV4AudioProcessorEditor::knobFactory(float rangeFloor, float rangeCeiling, float increments, std::string suffixVal, float defaultValue, juce::Slider& knob) {
     knob.setSliderStyle(juce::Slider::Rotary);
-    knob.setRange(rangeFloor, rangeCeiling, increments);
-    knob.setTextBoxStyle(juce::Slider::NoTextBox, false, 90, 0);
-    knob.setPopupDisplayEnabled(true, false, this);
+
+    knob.setPopupDisplayEnabled(true, true, this);
+    knob.setTextBoxIsEditable(true);
+    
     knob.setTextValueSuffix(suffixVal);
-    knob.setValue(defaultValue);
+    //knob.setValue(defaultValue);
 }
 
 
@@ -284,7 +308,7 @@ void ColourCombV4AudioProcessorEditor::setOnClicks() {
             bool isOn = oldMask & (1 << keyIndex);
 
             int activeCount = __builtin_popcount(oldMask);
-            if ((activeCount < 5 && !isOn) || isOn){
+            if ((activeCount < 8 && !isOn) || isOn){
                 int oldMask = (int) p->load();
                 int bit = 1 << keyIndex;   // keyIndex = 1 for C#
                 int newMask = oldMask ^ bit; // toggle
@@ -365,3 +389,6 @@ void ColourCombV4AudioProcessorEditor::timerCallback(){
         (allKeys[x])->setToggleState(mask & (1 << x), juce::dontSendNotification);
     }
 }
+
+
+

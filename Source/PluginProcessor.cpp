@@ -150,14 +150,23 @@ void ColourCombV4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, 
 
     juce::dsp::AudioBlock<float> block(buffer);
     juce::dsp::ProcessContextReplacing<float> ctx(block);
-    //jassert ((int) filterBank.size() == (int) activeFreqs.size());
+    float lowCut = getLowCutValue();
+    float highCut = getHighCutValue();
+    float debug = 0.f;
     for (int note = 0; note < (int) activeFreqs.size(); ++note)
     {
         if (activeFreqs[note] != 1) continue;
 
         auto& band = filterBank[note];
-        for (auto& notch : band)
-            notch.process(ctx);
+        int counter = 0;
+        
+        for (auto& notch : band){
+            debug = noteFrequencies[note][counter];
+            if ((noteFrequencies[note][counter] > lowCut) && (highCut > noteFrequencies[note][counter])){
+                notch.process(ctx);
+            }
+            counter++;
+        }
     }
     lowerShelf.process(ctx);
     upperShelf.process(ctx);
@@ -254,7 +263,8 @@ int ColourCombV4AudioProcessor::getCurrentFunction() const {return static_cast<i
 float ColourCombV4AudioProcessor::getFocusValue() const {return parameters.getRawParameterValue("focusValue")->load();}
 int ColourCombV4AudioProcessor::getCascadeValue() const {return static_cast<int>(parameters.getRawParameterValue("cascade")->load());}
 int ColourCombV4AudioProcessor::getMaskValue() const {return parameters.getRawParameterValue("activeKeyMask")->load();}
-
+float ColourCombV4AudioProcessor::getLowCutValue() const {return parameters.getRawParameterValue("lowCut")->load();}
+float ColourCombV4AudioProcessor::getHighCutValue() const {return parameters.getRawParameterValue("highCut")->load();}
 
 
 
@@ -294,7 +304,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ColourCombV4AudioProcessor::
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("q",1), "Q", juce::NormalisableRange<float>(1.0f, 100.0f, 2.0f), 20.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("mix",1), "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("makeup",1), "Makeup", juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("makeup",1), "Makeup", juce::NormalisableRange<float>(-60.0f, 12.0f, 0.1f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID("key",1), "Key", juce::StringArray({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }), 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID("qFunction",1), "Q Function", juce::StringArray({ "Sine", "Inv Sine" , "Constant"}), 0));
     //added a pushback for the layout
@@ -308,8 +318,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout ColourCombV4AudioProcessor::
     //will forceably correct them such that lowcut < highcut.  Processblock will check to see if a note enabled
     //lies in between, if not we simply skip the process call
     
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("lowCut",1),"Low Cut",0.f,22000.f,0.f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("highCut",1),"High Cut",0.f,22000.f,22000.f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("lowCut",1),"Low Cut",juce::NormalisableRange<float>(1.0f, 8000.0f, 10.0f),0.f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("highCut",1),"High Cut",juce::NormalisableRange<float>(8000.0f, 22000.0f, 10.0f),22000.0f));
     
     
     return { params.begin(), params.end() };
@@ -411,9 +421,9 @@ void ColourCombV4AudioProcessor::rebuild(){
             updateHarmonicGroup(x);
         }
     }
-    auto coeffs1 = juce::dsp::IIR::Coefficients<float>::makeLowShelf(spec.sampleRate, 200, 1.f, getFocusValue());
+    auto coeffs1 = juce::dsp::IIR::Coefficients<float>::makeLowShelf(spec.sampleRate, 200, 1.f, (1.1f-getFocusValue()));
     *lowerShelf.state = *coeffs1;
-    auto coeffs2 = juce::dsp::IIR::Coefficients<float>::makeHighShelf(spec.sampleRate, 18000, 1.f, getFocusValue());
+    auto coeffs2 = juce::dsp::IIR::Coefficients<float>::makeHighShelf(spec.sampleRate, 18000, 1.f,(1.1f-getFocusValue()));
     *upperShelf.state = *coeffs2;
 }
 

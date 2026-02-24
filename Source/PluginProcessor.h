@@ -67,6 +67,8 @@ public:
     float getFocusValue() const;
     int getCascadeValue() const;
     int getMaskValue() const;
+    float getLowCutValue() const;
+    float getHighCutValue() const;
 
     //void setTargetFrequencies(const std::vector<float>& freqs);
     void setFrequencyBounds(float floorhz, float ceilinghz);
@@ -74,10 +76,7 @@ public:
     // Listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     std::vector<int> activeFreqs = { 0,0,0,0,0,0,0,0,0,0,0,0,0 };
-    //void toggleActiveFreq(int x, int indexPosition);
     int numOfActiveFreqs = 0;
-    //was 1
-    //void updateVectorProcessorChain();
     juce::dsp::ProcessSpec spec;
     
     float determineQ (float freq, float qRatio, int funcType);
